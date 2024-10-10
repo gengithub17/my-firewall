@@ -13,19 +13,32 @@
 static struct class *firewall_class = NULL;
 static struct device *firewall_device = NULL;
 static int major_number;
+
 static struct nf_hook_ops nfho;
+// struct nf_hook_ops {
+//     struct list_head list;           // リストのノード
+//     nf_hookfn *hook;                 // フック関数へのポインタ
+//     unsigned int hooknum;            // フックの番号（どのフックポイントか）
+//     unsigned int pf;                 // プロトコルファミリー（例：IPv4）
+//     unsigned int priority;           // フックの優先順位
+// };
+
 static int blocked_port = 0;  // ブロックするポート番号
 
 // パケットフック関数
 static unsigned int hook_func(void *priv, struct sk_buff *skb,
                               const struct nf_hook_state *state) {
+    // skb: ソケットバッファにパケットのデータが格納されている
+
+    // IPヘッダの取り出し
     struct iphdr *ip_header = (struct iphdr *)skb_network_header(skb);
     struct tcphdr *tcp_header;
 
     if (ip_header->protocol == IPPROTO_TCP) {
+        // TCPヘッダのポインタをIPヘッダの長さから計算して取得
         tcp_header = (struct tcphdr *)((__u32 *)ip_header + ip_header->ihl);
 
-        // 動的に設定されたポート番号のパケットをブロック
+        // パケットの宛先ポートがブロックするポート番号と一致する場合はパケットを破棄
         if (ntohs(tcp_header->dest) == blocked_port) {
             printk(KERN_INFO "Dropping packet to port %d\n", blocked_port);
             return NF_DROP;
@@ -36,6 +49,7 @@ static unsigned int hook_func(void *priv, struct sk_buff *skb,
 }
 
 // デバイスファイルへの書き込みをハンドリングする関数
+// デバイスドライバに書き込みがあったときに呼び出される
 static ssize_t firewall_write(struct file *file, const char __user *buffer,
                               size_t len, loff_t *offset) {
     char buf[256];
@@ -61,19 +75,23 @@ static struct file_operations fops = {
 };
 
 // モジュール初期化関数
+// insmod でモジュールをロードするときに呼び出される
 static int __init firewall_module_init(void) {
+    // キャラクタデバイスの登録
     major_number = register_chrdev(0, DEVICE_NAME, &fops);
     if (major_number < 0) {
         printk(KERN_ALERT "Failed to register character device\n");
         return major_number;
     }
 
-    firewall_class = class_create(THIS_MODULE, CLASS_NAME);
+    // デバイスクラスの作成
+    firewall_class = class_create(CLASS_NAME);
     if (IS_ERR(firewall_class)) {
         unregister_chrdev(major_number, DEVICE_NAME);
         return PTR_ERR(firewall_class);
     }
 
+    // デバイスファイルの作成
     firewall_device = device_create(firewall_class, NULL, MKDEV(major_number, 0), NULL, DEVICE_NAME);
     if (IS_ERR(firewall_device)) {
         class_destroy(firewall_class);
@@ -93,6 +111,7 @@ static int __init firewall_module_init(void) {
 }
 
 // モジュール終了関数
+// rmmod でモジュールをアンロードするときに呼び出される
 static void __exit firewall_module_exit(void) {
     nf_unregister_net_hook(&init_net, &nfho);  // Netfilter フック解除
     device_destroy(firewall_class, MKDEV(major_number, 0));
