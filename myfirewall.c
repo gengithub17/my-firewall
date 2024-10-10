@@ -47,7 +47,8 @@ static unsigned int hook_func(void *priv, struct sk_buff *skb,
 static ssize_t firewall_write(struct file *file, const char __user *buffer,
                               size_t len, loff_t *offset) {
     char buf[256];
-    int port;
+    unsigned int ip[4];
+    __be32 ip_addr;
 
     if (len > 255) return -EINVAL;
     if (copy_from_user(buf, buffer, len)) return -EFAULT;
@@ -55,9 +56,10 @@ static ssize_t firewall_write(struct file *file, const char __user *buffer,
     buf[len] = '\0';
 
     // 書き込まれた内容を解析してポート番号を設定
-    if (sscanf(buf, "block %d", &port) == 1) {
-        blocked_port = port;
-        printk(KERN_INFO "Setting firewall to block port %d\n", blocked_port);
+    if (sscanf(buf, "allow %u.%u.%u.%u", &ip[0], &ip[1], &ip[2], &ip[3]) == 4) {
+        ip_addr = htonl((ip[0] << 24) | (ip[1] << 16) | (ip[2] << 8) | ip[3]);
+        allowed_ip = ip_addr;
+        printk(KERN_INFO "Allowed IP address: %pI4\n", &allowed_ip);
     }
 
     return len;
