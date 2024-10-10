@@ -23,7 +23,7 @@ static struct nf_hook_ops nfho;
 //     unsigned int priority;           // フックの優先順位
 // };
 
-static int blocked_port = 0;  // ブロックするポート番号
+static __be32 allowed_ip = 0;
 
 // パケットフック関数
 static unsigned int hook_func(void *priv, struct sk_buff *skb,
@@ -32,17 +32,11 @@ static unsigned int hook_func(void *priv, struct sk_buff *skb,
 
     // IPヘッダの取り出し
     struct iphdr *ip_header = (struct iphdr *)skb_network_header(skb);
-    struct tcphdr *tcp_header;
+    // struct tcphdr *tcp_header;
 
-    if (ip_header->protocol == IPPROTO_TCP) {
-        // TCPヘッダのポインタをIPヘッダの長さから計算して取得
-        tcp_header = (struct tcphdr *)((__u32 *)ip_header + ip_header->ihl);
-
-        // パケットの宛先ポートがブロックするポート番号と一致する場合はパケットを破棄
-        if (ntohs(tcp_header->dest) == blocked_port) {
-            printk(KERN_INFO "Dropping packet to port %d\n", blocked_port);
-            return NF_DROP;
-        }
+    if (ip_header->saddr != allowed_ip) {
+        printk(KERN_INFO "Dropping packet from %pI4\n", &ip_header->saddr);
+        return NF_DROP;
     }
 
     return NF_ACCEPT;
